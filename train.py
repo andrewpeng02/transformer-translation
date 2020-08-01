@@ -33,6 +33,7 @@ def main(**kwargs):
     train_dataset = ParallelLanguageDataset(project_path + '/data/processed/en/train.pkl',
                                             project_path + '/data/processed/fr/train.pkl',
                                             kwargs['num_tokens'], kwargs['max_seq_length'])
+    # Set batch_size=1 because all the batching is handled in the ParallelLanguageDataset class
     train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True, num_workers=4, pin_memory=True)
     valid_dataset = ParallelLanguageDataset(project_path + '/data/processed/en/val.pkl',
                                             project_path + '/data/processed/fr/val.pkl',
@@ -42,6 +43,8 @@ def main(**kwargs):
     model = LanguageTransformer(kwargs['vocab_size'], kwargs['d_model'], kwargs['nhead'], kwargs['num_encoder_layers'],
                                 kwargs['num_decoder_layers'], kwargs['dim_feedforward'], kwargs['max_seq_length'],
                                 kwargs['pos_dropout'], kwargs['trans_dropout']).to('cuda')
+
+    # Use Xavier normal initialization in the transformer
     for p in model.parameters():
         if p.dim() > 1:
             nn.init.xavier_normal_(p)
@@ -50,6 +53,7 @@ def main(**kwargs):
         Adam(model.parameters(), betas=(0.9, 0.98), eps=1e-09),
         kwargs['d_model'], kwargs['n_warmup_steps'])
 
+    # Use cross entropy loss, ignoring any padding
     criterion = nn.CrossEntropyLoss(ignore_index=0)
     train_losses, val_losses = train(train_loader, valid_loader, model, optim, criterion, kwargs['num_epochs'])
 
@@ -66,21 +70,26 @@ def train(train_loader, valid_loader, model, optim, criterion, num_epochs):
         pbar = tqdm(total=print_every, leave=False)
         total_loss = 0
 
+        # Shuffle batches every epoch
         train_loader.dataset.shuffle_batches()
         for step, (src, src_key_padding_mask, tgt, tgt_key_padding_mask) in enumerate(iter(train_loader)):
             total_step += 1
 
+            # Send the batches and key_padding_masks to gpu
             src, src_key_padding_mask = src[0].to('cuda'), src_key_padding_mask[0].to('cuda')
             tgt, tgt_key_padding_mask = tgt[0].to('cuda'), tgt_key_padding_mask[0].to('cuda')
-
             memory_key_padding_mask = src_key_padding_mask.clone()
+
+            # Create tgt_inp and tgt_out (which is tgt_inp but shifted by 1)
             tgt_inp, tgt_out = tgt[:, :-1], tgt[:, 1:]
             tgt_mask = gen_nopeek_mask(tgt_inp.shape[1]).to('cuda')
 
+            # Forward
             optim.zero_grad()
             outputs = model(src, tgt_inp, src_key_padding_mask, tgt_key_padding_mask[:, :-1], memory_key_padding_mask, tgt_mask)
             loss = criterion(rearrange(outputs, 'b t v -> (b t) v'), rearrange(tgt_out, 'b o -> (b o)'))
 
+            # Backpropagate and update optim
             loss.backward()
             optim.step_and_update_lr()
 
@@ -95,6 +104,7 @@ def train(train_loader, valid_loader, model, optim, criterion, num_epochs):
 
                 pbar = tqdm(total=print_every, leave=False)
 
+        # Validate every epoch
         pbar.close()
         val_loss = validate(valid_loader, model, criterion)
         val_losses.append((total_step, val_loss))
@@ -131,6 +141,15 @@ def validate(valid_loader, model, criterion):
 
 
 def gen_nopeek_mask(length):
+    """
+     Returns the nopeek mask
+             Parameters:
+                     length (int): Number of tokens in each sentence in the target batch
+             Returns:
+                     mask (arr): tgt_mask, looks like [[0., -inf, -inf],
+                                                      [0., 0., -inf],
+                                                      [0., 0., 0.]]
+     """
     mask = rearrange(torch.triu(torch.ones(length, length)) == 1, 'h w -> w h')
     mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
 

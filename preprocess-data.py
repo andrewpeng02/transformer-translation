@@ -10,6 +10,7 @@ import spacy
 def main():
     project_path = str(Path(__file__).resolve().parents[0])
     punctuation = ['(', ')', ':', '"', ' ']
+    # Create the random train, validation, and test indices
     train_indices, val_indices, test_indices = generate_indices(len(load_data(project_path + '/data/raw/english.txt')))
 
     process_lang_data(project_path + '/data/raw/english.txt', 'en', punctuation, train_indices, val_indices, test_indices)
@@ -20,10 +21,12 @@ def process_lang_data(data_path, lang, punctuation, train_indices, val_indices, 
     lang_data = load_data(data_path)
     lang_model = spacy.load(lang, disable=['tagger', 'parser', 'ner'])
 
+    # Tokenize the sentences
     processed_sentences = [process_sentences(lang_model, sentence, punctuation) for sentence in tqdm(lang_data)]
 
     train = [processed_sentences[i] for i in train_indices]
 
+    # Get the 10000 most common tokens
     freq_list = Counter()
     for sentence in train:
         freq_list.update(sentence)
@@ -38,10 +41,12 @@ def process_lang_data(data_path, lang, punctuation, train_indices, val_indices, 
     freq_list['[EOS]'] = 3
     processed_sentences = [map_words(sentence, freq_list) for sentence in tqdm(processed_sentences)]
 
+    # Split the data
     train = [processed_sentences[i] for i in train_indices]
     val = [processed_sentences[i] for i in val_indices]
     test = [processed_sentences[i] for i in test_indices]
 
+    # Save the data
     with open(f'data/processed/{lang}/train.pkl', 'wb') as f:
         pickle.dump(train, f)
     with open(f'data/processed/{lang}/val.pkl', 'wb') as f:
@@ -53,6 +58,15 @@ def process_lang_data(data_path, lang, punctuation, train_indices, val_indices, 
 
 
 def process_sentences(lang_model, sentence, punctuation):
+    """
+     Processes sentences by lowercasing text, ignoring punctuation, and using Spacy tokenization
+             Parameters:
+                     lang_model: Spacy language model
+                     sentence (str): Sentence to be tokenized
+                     punctuation (arr): Array of punctuation to be ignored
+             Returns:
+                     sentence (arr): Tokenized sentence
+     """
     sentence = sentence.lower()
     sentence = [tok.text for tok in lang_model.tokenizer(sentence) if tok.text not in punctuation]
 
@@ -72,6 +86,15 @@ def map_words(sentence, freq_list):
 
 
 def generate_indices(data_len):
+    """
+     Generate train, validation, and test indices
+             Parameters:
+                     data_len (int): Amount of sentences in the dataset
+             Returns:
+                     train_indices (arr): Array of indices for train dataset
+                     val_indices (arr): Array of indices for validation dataset
+                     test_indices (arr): Array of indices for test dataset
+     """
     indices = [i for i in range(data_len)]
     random.shuffle(indices)
 

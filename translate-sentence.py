@@ -6,15 +6,19 @@ import torch
 
 
 def main():
+    # Load the trained model, Spacy tokenizer, and frequency lists
     model = torch.load('output/transformer.pth')
     lang_model = spacy.load('en')
     with open('data/processed/en/freq_list.pkl', 'rb') as f:
         en_freq_list = pickle.load(f)
     with open('data/processed/fr/freq_list.pkl', 'rb') as f:
         fr_freq_list = pickle.load(f)
+
+    # Tokenize input
     sentence = input('Please enter your english sentence: ')
     sentence = tokenize(sentence, en_freq_list, lang_model)
 
+    # Generate the translated sentence, feeding the model's output into its input
     translated_sentence = [fr_freq_list['[SOS]']]
     i = 0
     while int(translated_sentence[-1]) != fr_freq_list['[EOS]'] and i < 15:
@@ -22,6 +26,7 @@ def main():
         values, indices = torch.topk(output, 5)
         translated_sentence.append(int(indices[-1][0]))
 
+    # Print out the translated sentence
     print(detokenize(translated_sentence, fr_freq_list))
 
 

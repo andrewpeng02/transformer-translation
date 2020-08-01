@@ -2,6 +2,7 @@ import re
 
 
 def main():
+    # Split the original dataset into parallel English and French txts
     eng_sentences = []
     fra_sentences = []
     with open('data/raw/fra.txt') as f:
